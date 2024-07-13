@@ -134,7 +134,7 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
                     contents.len()
                 )
             } else {
-                "HTTP/1.1 404 Not Found\r\n".to_string()
+                "HTTP/1.1 404 Not Found\r\n\r\n".to_string()
             }
         }
         p if p.starts_with("/echo/") => {
