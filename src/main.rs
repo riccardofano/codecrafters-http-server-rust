@@ -130,9 +130,9 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
     let mut buffer = [0; 256];
-    let _n_read = stream.read(&mut buffer).unwrap();
+    let n_read = stream.read(&mut buffer).unwrap();
 
-    let request_str = std::str::from_utf8(&buffer).unwrap();
+    let request_str = std::str::from_utf8(&buffer[0..n_read]).unwrap();
     let request = Request::from_str(request_str);
 
     let response = match request.path {
