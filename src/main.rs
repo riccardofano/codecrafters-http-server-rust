@@ -163,7 +163,7 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
     let request_str = std::str::from_utf8(&buffer[0..n_read]).unwrap();
     let request = Request::from_str(request_str);
 
-    let response = match request.path {
+    let mut response = match request.path {
         "/" => Response::new("HTTP/1.1 200 OK"),
         "/user-agent" => handle_get_user_agent(&request),
         p if p.starts_with("/files/") => {
@@ -177,6 +177,14 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
         p if p.starts_with("/echo/") => handle_get_echo(&request),
         _ => Response::new("HTTP/1.1 404 Not Found"),
     };
+
+    if let Some(accepted_encodings) = request.headers.get("accept-encoding") {
+        if accepted_encodings.split(',').contains(&"gzip") {
+            response
+                .headers
+                .insert("Content-Encoding", "gzip".to_string());
+        }
+    }
 
     stream.write_all(response.build().as_bytes()).unwrap();
 }
