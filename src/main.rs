@@ -1,6 +1,6 @@
 // Uncomment this block to pass the first stage
 use std::{
-    error::Error,
+    collections::HashMap,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
 };
@@ -31,16 +31,33 @@ fn handle_connection(mut stream: TcpStream) {
     let _n_read = stream.read(&mut buffer).unwrap();
 
     let request = std::str::from_utf8(&buffer).unwrap();
-    let lines: Vec<_> = request.split("\r\n").collect();
+    let (status_line, rest) = request.split_once("\r\n").unwrap();
 
-    let [_method, path, _version]: [&str; 3] = lines[0]
+    let [_method, path, _version]: [&str; 3] = status_line
         .split_whitespace()
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
 
+    let (headers, _body) = rest.split_once("\r\n\r\n").unwrap();
+    let headers = headers
+        .split("\r\n")
+        .map(|line| {
+            line.split_once(": ")
+                .map(|(h, c)| (h.to_lowercase(), c))
+                .unwrap()
+        })
+        .collect::<HashMap<_, _>>();
+
     let response = match path {
         "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
+        "/user-agent" => {
+            let user_agent = headers.get("user-agent").unwrap_or(&"");
+            let len = user_agent.len();
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\n\r\n{user_agent}"
+            )
+        }
         p if p.starts_with("/echo/") => {
             let str = p.strip_prefix("/echo/").unwrap();
             let len = str.len();
