@@ -28,20 +28,28 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 256];
-    let n_read = stream.read(&mut buffer).unwrap();
+    let _n_read = stream.read(&mut buffer).unwrap();
 
     let request = std::str::from_utf8(&buffer).unwrap();
     let lines: Vec<_> = request.split("\r\n").collect();
 
-    let [method, path, version]: [&str; 3] = lines[0]
+    let [_method, path, _version]: [&str; 3] = lines[0]
         .split_whitespace()
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
 
     let response = match path {
-        "/" => "HTTP/1.1 200 OK\r\n\r\n",
-        _ => "HTTP/1.1 404 Not Found\r\n\r\n",
+        "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
+        p if p.starts_with("/echo/") => {
+            let str = p.strip_prefix("/echo/").unwrap();
+            let len = str.len();
+
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\n\r\n{str}"
+            )
+        }
+        _ => "HTTP/1.1 404 Not Found\r\n\r\n".to_string(),
     };
 
     stream.write_all(response.as_bytes()).unwrap();
