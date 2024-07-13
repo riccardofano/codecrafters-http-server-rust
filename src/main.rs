@@ -11,6 +11,8 @@ use std::{
     thread,
 };
 
+use itertools::Itertools;
+
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
 #[allow(dead_code)]
@@ -94,6 +96,32 @@ impl<'a> Request<'a> {
     }
 }
 
+#[derive(Debug, Default)]
+struct Response<'a> {
+    status_line: &'a str,
+    headers: HashMap<&'a str, String>,
+    body: String,
+}
+
+impl<'a> Response<'a> {
+    fn new(status_line: &'a str) -> Self {
+        Self {
+            status_line,
+            ..Default::default()
+        }
+    }
+
+    fn build(&self) -> String {
+        let headers: String = self
+            .headers
+            .iter()
+            .map(|(k, v)| format!("{k}: {v}\r\n"))
+            .join("");
+
+        format!("{}\r\n{}\r\n{}", self.status_line, headers, self.body)
+    }
+}
+
 fn main() {
     let mut args = std::env::args();
 
@@ -136,7 +164,7 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
     let request = Request::from_str(request_str);
 
     let response = match request.path {
-        "/" => "HTTP/1.1 200 OK\r\n\r\n".to_string(),
+        "/" => Response::new("HTTP/1.1 200 OK"),
         "/user-agent" => handle_get_user_agent(&request),
         p if p.starts_with("/files/") => {
             let relative_path = p.strip_prefix("/files/").unwrap();
@@ -147,42 +175,69 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
             }
         }
         p if p.starts_with("/echo/") => handle_get_echo(&request),
-        _ => "HTTP/1.1 404 Not Found\r\n\r\n".to_string(),
+        _ => Response::new("HTTP/1.1 404 Not Found"),
     };
 
-    stream.write_all(response.as_bytes()).unwrap();
+    stream.write_all(response.build().as_bytes()).unwrap();
 }
 
-fn handle_get_user_agent(request: &Request) -> String {
+fn handle_get_user_agent<'a>(request: &Request) -> Response<'a> {
     let user_agent = request.headers.get("user-agent").unwrap_or(&"");
     let len = user_agent.len();
-    format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\n\r\n{user_agent}"
-    )
-}
 
-fn handle_get_echo(request: &Request) -> String {
-    let str = request.path.strip_prefix("/echo/").unwrap();
-    let len = str.len();
-
-    format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\n\r\n{str}")
-}
-
-fn handle_get_files(_request: &Request, filename: &str, files_directory: PathBuf) -> String {
-    if let Ok(mut file) = File::open(files_directory.join(filename)) {
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-        format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{contents}",
-            contents.len()
-        )
-    } else {
-        "HTTP/1.1 404 Not Found\r\n\r\n".to_string()
+    Response {
+        status_line: "HTTP/1.1 200 OK",
+        headers: HashMap::from([
+            ("Content-Type", "text/plain".to_string()),
+            ("Content-Length", len.to_string()),
+        ]),
+        body: user_agent.to_string(),
     }
 }
 
-fn handle_post_files(request: &Request, filename: &str, files_directory: PathBuf) -> String {
+fn handle_get_echo<'a>(request: &Request) -> Response<'a> {
+    let str = request.path.strip_prefix("/echo/").unwrap();
+    let len = str.len();
+
+    Response {
+        status_line: "HTTP/1.1 200 OK",
+        headers: HashMap::from([
+            ("Content-Type", "text/plain".to_string()),
+            ("Content-Length", len.to_string()),
+        ]),
+        body: str.to_string(),
+    }
+}
+
+fn handle_get_files<'a>(
+    _request: &Request,
+    filename: &str,
+    files_directory: PathBuf,
+) -> Response<'a> {
+    let Ok(mut file) = File::open(files_directory.join(filename)) else {
+        return Response::new("HTTP/1.1 404 Not Found");
+    };
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    Response {
+        status_line: "HTTP/1.1 200 OK",
+        headers: HashMap::from([
+            ("Content-Type", "application/octet-stream".to_string()),
+            ("Content-Length", contents.len().to_string()),
+        ]),
+        body: contents.to_string(),
+    }
+}
+
+fn handle_post_files<'a>(
+    request: &Request,
+    filename: &str,
+    files_directory: PathBuf,
+) -> Response<'a> {
     let mut file = File::create(files_directory.join(filename)).unwrap();
     file.write_all(request.body.as_bytes()).unwrap();
 
-    "HTTP/1.1 201 Created\r\n\r\n".to_string()
+    Response::new("HTTP/1.1 201 Created")
 }
