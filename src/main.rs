@@ -130,7 +130,7 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
             if let Ok(mut file) = File::open(files_directory.join(relative_path)) {
                 let mut contents = String::new();
                 file.read_to_string(&mut contents).unwrap();
-                format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{contents}",
+                format!("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\n\r\n{contents}",
                     contents.len()
                 )
             } else {
