@@ -11,6 +11,7 @@ use std::{
     thread,
 };
 
+use flate2::{write::GzEncoder, Compression};
 use itertools::Itertools;
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
@@ -184,9 +185,16 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
             .map(|s| s.trim())
             .contains(&"gzip")
         {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(response.body.as_bytes()).unwrap();
+            let encoded = encoder.finish().unwrap();
+            let len = encoded.len();
+
+            response.body = unsafe { String::from_utf8_unchecked(encoded) };
             response
                 .headers
                 .insert("Content-Encoding", "gzip".to_string());
+            response.headers.insert("Content-Length", len.to_string());
         }
     }
 
