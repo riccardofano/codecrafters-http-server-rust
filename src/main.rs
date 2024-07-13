@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
+    fs::File,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    path::PathBuf,
     sync::{
         mpsc::{self, Receiver, Sender},
         Arc, Mutex,
@@ -11,6 +13,7 @@ use std::{
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
+#[allow(dead_code)]
 struct ThreadPool {
     workers: Vec<Worker>,
     sender: Sender<Job>,
@@ -35,6 +38,7 @@ impl ThreadPool {
     }
 }
 
+#[allow(dead_code)]
 struct Worker {
     id: usize,
     handle: std::thread::JoinHandle<()>,
@@ -53,8 +57,18 @@ impl Worker {
 }
 
 fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+    let mut args = std::env::args();
+
+    let mut directory_path = PathBuf::new();
+    while let Some(arg) = args.next() {
+        match arg.as_ref() {
+            "--directory" => {
+                let path = args.next().unwrap_or_default();
+                directory_path = PathBuf::from(path);
+            }
+            _ => continue,
+        }
+    }
 
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
     let pool = ThreadPool::new(10);
@@ -64,8 +78,9 @@ fn main() {
             Ok(stream) => {
                 println!("accepted new connection");
 
+                let directory_path = directory_path.clone();
                 pool.execute(|| {
-                    handle_connection(stream);
+                    handle_connection(stream, directory_path);
                 });
             }
             Err(e) => {
@@ -75,7 +90,7 @@ fn main() {
     }
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
     let mut buffer = [0; 256];
     let _n_read = stream.read(&mut buffer).unwrap();
 
@@ -108,6 +123,19 @@ fn handle_connection(mut stream: TcpStream) {
             format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len}\r\n\r\n{user_agent}"
             )
+        }
+        p if p.starts_with("/files/") => {
+            let relative_path = p.strip_prefix("/files/").unwrap();
+
+            if let Ok(mut file) = File::open(files_directory.join(relative_path)) {
+                let mut contents = String::new();
+                file.read_to_string(&mut contents).unwrap();
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n{contents}",
+                    contents.len()
+                )
+            } else {
+                "HTTP/1.1 404 Not Found\r\n".to_string()
+            }
         }
         p if p.starts_with("/echo/") => {
             let str = p.strip_prefix("/echo/").unwrap();
