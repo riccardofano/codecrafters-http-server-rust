@@ -179,7 +179,11 @@ fn handle_connection(mut stream: TcpStream, files_directory: PathBuf) {
     };
 
     if let Some(accepted_encodings) = request.headers.get("accept-encoding") {
-        if accepted_encodings.split(',').contains(&"gzip") {
+        if accepted_encodings
+            .split(',')
+            .map(|s| s.trim())
+            .contains(&"gzip")
+        {
             response
                 .headers
                 .insert("Content-Encoding", "gzip".to_string());
